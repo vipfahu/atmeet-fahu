@@ -1,5 +1,61 @@
 # at meet FAHU
 
-Consulta de disponibilidad para encuentros. React, Vite, Netlify Functions y Supabase.
+Plataforma en español para encontrar horarios comunes. Permite consultas por fechas concretas (máximo 62 días), semana habitual y días 1–31 de un mes habitual; vistas de semana y mes; bloques de 30/60 minutos; respuestas con nombre y comentario; disponibilidad, alternativa y ocupado; comparación y borrador en Google Calendar.
 
-Requiere Node.js 22.13 o superior. Ejecutar npm ci y npm run build. Configurar las credenciales exclusivamente como variables del servidor en Netlify.
+## Funcionamiento y privacidad
+
+Cada consulta tiene un identificador aleatorio de 128 bits. Quien conoce el enlace puede leer nombres, preferencias y comentarios. No se publican índices ni listados de consultas. No equivale a autenticación: no usar para información sensible. Cada navegador conserva un secreto aleatorio para actualizar exclusivamente su propia respuesta; el servidor almacena solo su hash. Perder los datos del navegador pierde esa capacidad de edición. Los nombres no se verifican y distintas personas pueden usar el mismo nombre. Las respuestas se actualizan cada 30 segundos y al volver a la pestaña. Los bloques vacíos significan «Sin respuesta».
+
+Todos responden en la zona horaria de la consulta, visible en pantalla. La semana y el mes habitual no se convierten automáticamente en eventos. La comparación ordena primero por menos ocupados, luego menos respuestas faltantes, y después más disponibles; las alternativas se muestran separadas. El enlace Google Calendar abre un borrador, no lee calendarios ni crea eventos automáticamente.
+
+## Publicación institucional: GitHub + Netlify + Supabase
+
+Esta copia usa servicios independientes y no contiene consultas ni credenciales del sitio original.
+
+1. Crear el proyecto Supabase institucional y ejecutar, en orden: `supabase/schema.sql`, `supabase/admin-setup.sql`, `supabase/admin-delete.sql`, `supabase/creator-management.sql`.
+2. Conectar este repositorio a un proyecto nuevo de Netlify llamado `atmeetfahu`. `netlify.toml` configura Vite, las funciones y las rutas. Node 22.13 o superior.
+3. Añadir `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` del nuevo proyecto como variables de servidor. Nunca guardar claves en GitHub ni usar prefijo VITE_ para secretos.
+4. Para correos, añadir `RESEND_API_KEY` y `RESEND_FROM_EMAIL` con un remitente verificado. No copiar las credenciales del sitio original.
+5. Provisionar la invitación inicial de Administración para el correo institucional.
+6. Volver a desplegar y verificar consultas, respuestas independientes, administración, cierre y notificaciones.
+
+## Comprobaciones
+
+`npx tsc --noEmit`, `npm run build` y `npx vite build --config vite.netlify.ts`. Los casos funcionales de API se prueban contra una base local temporal. Máximo 200 respuestas por consulta. Para una operación pública a gran escala añadir controles de abuso y retención según necesidades.
+
+## Administración e historial (Netlify + Supabase)
+
+Ejecutar `supabase/admin-setup.sql` una vez sobre la base existente. Es aditivo: conserva las consultas y sus respuestas. El panel `/admin` muestra todas las consultas, incluidas las anteriores, con búsqueda y paginación. Solo cuentas invitadas con `app_metadata.meeting_admin = true` pueden entrar. El permiso se comprueba contra Supabase en cada petición. Las cuentas públicas de Supabase no reciben ese permiso.
+
+La primera invitación se provisiona por el propietario de la base: generar 32 bytes aleatorios en hexadecimal, insertar su SHA-256 en `meeting_admin_invitations.token_hash` con `email=''` y entregar al propietario `/admin#invite=TOKEN`. No guardar el token en GitHub. Las siguientes invitaciones se crean desde el panel para un correo concreto, vencen en siete días y se consumen de forma atómica. El administrador comparte el enlace; la aplicación no envía correos. La persona invitada elige su contraseña. Las contraseñas son administradas por Supabase Auth; nunca se guardan en las tablas de la aplicación.
+
+Las sesiones duran ocho horas y usan cookies HttpOnly, Secure en HTTPS y SameSite=Strict. Solo se almacena el hash de la sesión en la base. Cerrar sesión elimina la sesión; cambiar contraseña cierra las demás. Para revocar una cuenta desde Supabase, quitar `meeting_admin` de sus metadatos de aplicación o eliminarla. No habilitar políticas de acceso público para las tablas de administración: solo las funciones del servidor acceden a ellas.
+
+Los enlaces compartidos usan `/r/titulo~codigo`. El código codifica el identificador aleatorio completo de 128 bits, de modo que títulos iguales no colisionan y los enlaces no son consecutivos. Los enlaces antiguos `/?p=...` siguen funcionando, sin cambiar las respuestas ni los permisos de edición del navegador.
+
+Pruebas de administración: compilar `scripts/test-admin.mjs` con esbuild para Node y ejecutar el resultado. Comprueban permisos, cookies, origen, invitaciones de un uso, cierre de sesión y compatibilidad de enlaces.
+
+Para habilitar la eliminación desde Administración, ejecutar también `supabase/admin-delete.sql`. Cada eliminación exige confirmación en pantalla, autorización de administrador y origen válido. La consulta y sus respuestas se borran en una sola transacción; el enlace compartido deja de funcionar.
+
+## Respuestas independientes y duración
+
+Al abrir una consulta con respuestas se muestra Coincidencias. Pulsar allí un horario consulta los participantes; no modifica respuestas. Una respuesta guardada requiere activar «Editar respuesta de…». Para compartir navegador, usar «Responder como otra persona»: crea un identificador independiente y conserva las respuestas anteriores, que pueden volver a editarse en ese navegador. Cada pestaña mantiene su identificador mientras trabaja. El servidor rechaza reutilizar una respuesta existente con otro nombre.
+
+Las nuevas consultas permiten establecer la duración de la reunión como múltiplo del bloque de calendario. Las coincidencias requieren disponibilidad continua durante toda esa duración; Google Calendar y el archivo .ics usan la misma duración. Las consultas anteriores sin duración explícita conservan la duración de un bloque.
+
+## Avisos al creador mediante Resend
+
+En Netlify, configurar `RESEND_API_KEY` (clave con permiso de envío) y `RESEND_FROM_EMAIL` (por ejemplo `at meet FAHU <avisos@tu-dominio-verificado.cl>`) con alcance Functions. No usar prefijos VITE_ ni guardar claves en el repositorio. Volver a desplegar después de configurar las variables. La variable de Netlify `URL` proporciona el dominio del enlace; el valor de respaldo es https://atmeetfahu.netlify.app.
+
+Cada respuesta nueva o modificada envía un aviso al correo del creador. Guardados idénticos no generan nuevos avisos. Resend recibe una clave de idempotencia para evitar duplicados en reintentos; se reintentan hasta tres veces los errores transitorios. Si todos fallan, la respuesta sigue guardada y el usuario ve un aviso; no existe una cola de reenvío diferido. Sin las variables configuradas o en consultas antiguas sin correo del creador, el envío permanece desactivado.
+
+La información del creador se guarda en los datos de la consulta y solo se devuelve mediante el historial administrativo. El formulario inicial precompleta su nombre desde «Tu nombre», conservando correcciones manuales.
+
+## Gestión privada, cierre y mensajes al grupo
+
+Aplicar `supabase/creator-management.sql` en Supabase. Las funciones están restringidas a `service_role`; el bloqueo de la fila de consulta serializa el cierre y el guardado para impedir respuestas tardías.
+
+Al crear una consulta se elige si se reciben avisos de nuevas respuestas (activados por defecto). Siempre se entrega un enlace privado de gestión y se envía al correo del creador. La parte secreta viaja en el fragmento del enlace, se elimina de la barra al abrir la gestión y se conserva en la sesión. El enlace público nunca devuelve la clave, su hash ni los correos de participantes. El creador puede recuperar acceso por correo desde la consulta, con un intervalo mínimo de cinco minutos; el nuevo enlace reemplaza los anteriores.
+
+Cada nuevo registro requiere correo. Respuestas antiguas sin correo siguen visibles pero no recibirán el mensaje final. Cerrar registros bloquea tanto altas como ediciones. Después del cierre, el creador puede revisar un asunto y mensaje y enviarlo a las direcciones únicas registradas; cada destinatario recibe un correo separado, sin exponer las otras direcciones. Se usan lotes de hasta 100 e idempotencia para reintentar un envío fallido sin duplicar los lotes aceptados durante la ventana de Resend. Los mensajes no se envían automáticamente al cerrar.
+
