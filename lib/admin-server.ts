@@ -8,7 +8,8 @@ export async function digest(value:string){return Array.from(new Uint8Array(awai
 class HttpError extends Error {constructor(public status:number,message:string){super(message);}}
 type AdminUser={id:string;email:string;active:boolean;password_hash:string};
 
-export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch){
+export type AdminMailer=(kind:'invite'|'reset',email:string,url:string,key:string)=>Promise<void>;
+export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,mailer?:AdminMailer){
   const root=url.replace(/\/$/,'');
   async function call(path:string,method='GET',body?:unknown,bearer=key){
     const r=await fetcher(root+path,{method,headers:{'Accept-Profile':'atmeet_fahu','Content-Profile':'atmeet_fahu',apikey:key,Authorization:`Bearer ${bearer}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
@@ -49,6 +50,23 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch){
       if(request.method==='POST'){
         const raw=await request.text();if(raw.length>12000)throw new HttpError(413,'Solicitud demasiado grande.');
         try{body=JSON.parse(raw);}catch{throw new HttpError(400,'Formato no permitido.');}
+      }
+      if(path==='forgot-password'&&request.method==='POST'){
+        const {email}=credentials.pick({email:true}).parse(body);
+        if(!mailer)throw new HttpError(503,'El envío de correos no está disponible. Inténtalo más tarde.');
+        const generic={message:'Si existe una cuenta activa con ese correo, recibirás un enlace para recuperar tu contraseña.'};
+        const allowed=await rest('rpc/admin_login_attempt','POST',{p_email:'recovery:'+email});
+        if(!allowed)return reply(generic);
+        const token=secret(),hash=await digest(token);
+        const issued=await rest('rpc/admin_issue_reset','POST',{p_email:email,p_hash:hash});
+        if(issued){try{await mailer('reset',email,current.origin+'/admin#reset='+token,'admin-reset/'+hash);}catch{console.error('Admin recovery email delivery failed');}}
+        return reply(generic);
+      }
+      if(path==='reset-password'&&request.method==='POST'){
+        const input=z.object({token:inviteToken,password:z.string().min(12).max(128)}).parse(body);
+        const changed=await rest('rpc/admin_reset_password','POST',{p_hash:await digest(input.token),p_new_hash:await passwordHash(input.password)});
+        if(!changed)throw new HttpError(400,'El enlace no es válido, ha vencido o ya fue utilizado. Solicita uno nuevo.');
+        cookie('',0);return reply({ok:true});
       }
       if(path==='login'&&request.method==='POST'){
         const input=credentials.parse(body);
@@ -91,7 +109,10 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch){
       if(path==='invitations'&&request.method==='POST'){
         const {email}=credentials.pick({email:true}).parse(body),token=secret();
         await rest('meeting_admin_invitations','POST',{token_hash:await digest(token),email,created_by:user.id});
-        return reply({url:current.origin+'/admin#invite='+token,expiresInDays:7},201);
+        const invitationUrl=current.origin+'/admin#invite='+token;
+        let emailSent=false;
+        if(mailer){try{await mailer('invite',email,invitationUrl,'admin-invite/'+await digest(token));emailSent=true;}catch{console.error('Admin invitation email delivery failed');}}
+        return reply({url:invitationUrl,expiresInDays:7,emailSent},201);
       }
       if(path==='password'&&request.method==='POST'){
         const input=z.object({currentPassword:z.string().min(1).max(128),password:z.string().min(12).max(128)}).parse(body);

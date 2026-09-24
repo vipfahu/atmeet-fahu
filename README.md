@@ -14,15 +14,19 @@ No ejecutar los scripts anteriores que instalan tablas en `public`; permanecen c
 
 Node.js 22.13 o superior. `npm ci`, `npm run build`. Netlify usa `netlify.toml`, con salida `dist-netlify` y funciones en `netlify/functions`.
 
+Después del instalador base, ejecutar `supabase/admin-recovery.sql` una sola vez.
+
+Remitente FAHU: `at meet FAHU <atmeetfahu@contact.agencements.net>`.
+
 Variables de servidor: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`. Nunca guardar secretos en GitHub ni añadirles el prefijo VITE_. Los correos requieren un remitente verificado.
 
 ## Administración independiente
 
 Las cuentas de at meet FAHU son exclusivas de este sistema y pueden pertenecer a personas sin cuenta VIP. No utilizan Supabase Auth ni las tablas de perfiles del portal. Contraseñas con scrypt y sal aleatoria; sesiones opacas de ocho horas con cookies HttpOnly, Secure y SameSite=Strict. Ocho intentos por correo cada quince minutos. Cada petición comprueba que la cuenta siga activa.
 
-El propietario provisiona la primera invitación guardando solo el SHA-256 de un token aleatorio de 32 bytes en `atmeet_fahu.meeting_admin_invitations`, con el correo concreto y vencimiento. Se entrega privadamente el enlace `/admin#invite=TOKEN`. No incluir el token en el repositorio. Las siguientes invitaciones se generan desde Administración.
+El propietario provisiona la primera invitación guardando solo el SHA-256 de un token aleatorio de 32 bytes en `atmeet_fahu.meeting_admin_invitations`, con el correo concreto y vencimiento. Se entrega privadamente el enlace `/admin#invite=TOKEN`. No incluir el token en el repositorio. Las siguientes invitaciones se generan y envían desde Administración.
 
-La aceptación comprueba destinatario, vencimiento y uso único de forma transaccional. Un cambio de contraseña invalida las sesiones anteriores. Desactivar una cuenta mediante `active=false` revoca su acceso. No existe recuperación automática de contraseña por correo en esta versión.
+La aceptación comprueba destinatario, vencimiento y uso único de forma transaccional. Un cambio de contraseña invalida las sesiones anteriores. Desactivar una cuenta mediante `active=false` revoca su acceso. La recuperación por correo usa enlaces de un solo uso con vencimiento de 30 minutos, respuestas neutrales y límites de solicitud. Cambiar la contraseña invalida enlaces anteriores y sesiones. Las invitaciones se envían por correo; si falla el envío, se conserva el enlace para compartirlo manualmente.
 
 ## Comprobaciones
 

@@ -40,6 +40,16 @@ export function managementMailer(config:{apiKey:string;from:string;siteUrl:strin
   }throw Error('Email failed');
  }
  return {
+  async admin(kind:'invite'|'reset',email:string,url:string,key:string){
+   const reset=kind==='reset';
+   await send('/emails',{from:config.from,to:[email],subject:reset?'at meet FAHU · Recupera tu contraseña':'at meet FAHU · Invitación de administración',text:[
+    reset?'Recibimos una solicitud para recuperar tu contraseña de at meet FAHU.':'Has recibido una invitación para administrar at meet FAHU.',
+    reset?'Define una nueva contraseña mediante este enlace privado:':'Activa tu cuenta y define tu contraseña mediante este enlace privado:',url,
+    reset?'El enlace vence en 30 minutos y solo puede usarse una vez. Al cambiar la contraseña se cerrarán tus sesiones anteriores.':'El enlace vence en 7 días y solo puede usarse una vez. Usa el correo al que recibiste esta invitación. Tendrás acceso al historial de consultas y podrás invitar a otros administradores.',
+    reset?'Si no solicitaste este cambio, ignora este mensaje. Tu contraseña actual seguirá funcionando.':'Si no esperabas esta invitación, puedes ignorarla.',
+    'Esta cuenta es independiente del portal VIP. No compartas este enlace.'
+   ].join('\n\n')},key);
+  },
   async access(poll:import('./domain').Poll,token:string){
    const {managementPath}=await import('./api');
    await send('/emails',{from:config.from,to:[poll.creator!.email],subject:`at meet FAHU · Gestiona tu consulta: ${poll.title.replace(/[\r\n]/g,' ')}`,text:`Hola, ${poll.creator!.name}:\n\nEste enlace privado permite cerrar los registros y enviar un mensaje a quienes respondieron:\n${new URL(managementPath(poll.id,token),config.siteUrl).href}\n\nGuárdalo y no lo compartas con participantes.\n\nPara compartir la consulta, usa este otro enlace:\n${new URL(pollPath(poll),config.siteUrl).href}\n\nLos avisos de nuevas respuestas están ${poll.creator!.notify===false?'desactivados':'activados'}. Puedes cambiarlo en la gestión de la consulta.`},`creator-access/${poll.id}/${token}`);

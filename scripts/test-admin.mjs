@@ -4,14 +4,16 @@ import {adminHandler,digest} from '../lib/admin-server.ts';
 import {pollPath,pollIdFromUrl} from '../lib/links.ts';
 const rows=new Map(),invitations=new Map();
 const user={id:'c110a833-20c6-457f-8e81-eeb803076551',email:'admin@example.com',active:true,password_hash:await passwordHash('password')};
-let privileged=true,historyCalls=0,created=0,deleted=[];
+let resetHash=null,resetAllowed=true,privileged=true,historyCalls=0,created=0,deleted=[];
 const fetcher=async(url,options={})=>{
  const u=new URL(url),p=u.pathname,b=options.body?JSON.parse(options.body):{};
  const ok=d=>Response.json(d);
  assert.equal(options.headers['Accept-Profile'],'atmeet_fahu');
  assert.equal(options.headers['Content-Profile'],'atmeet_fahu');
  assert(!p.startsWith('/auth/'),'Must never modify shared Supabase Auth');
- if(p==='/rest/v1/rpc/admin_login_attempt')return ok(true);
+ if(p==='/rest/v1/rpc/admin_login_attempt')return ok(resetAllowed);
+ if(p==='/rest/v1/rpc/admin_issue_reset'){if(b.p_email!==user.email)return ok(false);resetHash=b.p_hash;return ok(true);}
+ if(p==='/rest/v1/rpc/admin_reset_password'){if(!resetHash||b.p_hash!==resetHash)return ok(false);resetHash=null;user.password_hash=b.p_new_hash;rows.clear();return ok(true);}
  if(p==='/rest/v1/admin_accounts')return ok(privileged?[user]:[]);
  if(p==='/rest/v1/rpc/admin_accept_invitation'){
   const inv=invitations.get(b.p_hash);if(!inv||inv.used||inv.email!==b.p_email)return ok([]);
@@ -62,4 +64,24 @@ const id='p_'+crypto.randomUUID().replaceAll('-','');const path=pollPath({id,tit
 }
 assert.equal(pollIdFromUrl(new URL('https://meeting.test/r/inventado')),null);
 assert.notEqual(pollPath({id:'p_'+'a'.repeat(32),title:'Igual'}),pollPath({id:'p_'+'b'.repeat(32),title:'Igual'}));
+const delivered=[];
+const withMail=adminHandler('https://supabase.test','server-secret',fetcher,async(...args)=>{delivered.push(args)});
+const again=await withMail(request('login',{email:user.email,password:'password'}));
+const activeCookie=again.headers.get('set-cookie').split(';')[0];
+const mailedInvite=await withMail(request('invitations',{email:'other@example.com'},activeCookie));
+assert.equal((await mailedInvite.json()).emailSent,true);assert.equal(delivered[0][0],'invite');
+const known=await withMail(request('forgot-password',{email:user.email}));
+const unknown=await withMail(request('forgot-password',{email:'missing@example.com'}));
+assert.deepEqual(await known.json(),await unknown.json());assert.equal(delivered.length,2);
+assert.equal((await withMail(request('forgot-password',{email:user.email},null,'https://evil.test'))).status,403);
+resetAllowed=false;await withMail(request('forgot-password',{email:user.email}));assert.equal(delivered.length,2);resetAllowed=true;
+const recoveryToken=new URLSearchParams(new URL(delivered[1][2]).hash.slice(1)).get('reset');
+assert.equal((await withMail(request('reset-password',{token:recoveryToken,password:'short'}))).status,400);
+assert.equal((await withMail(request('reset-password',{token:'0'.repeat(64),password:'new-password-123'}))).status,400);
+assert.equal((await withMail(request('reset-password',{token:recoveryToken,password:'new-password-123'}))).status,200);
+assert.equal((await withMail(request('reset-password',{token:recoveryToken,password:'another-password'}))).status,400);
+assert.equal((await withMail(request('history',undefined,activeCookie))).status,401);
+assert.equal((await withMail(request('login',{email:user.email,password:'password'}))).status,401);
+assert.equal((await withMail(request('login',{email:user.email,password:'new-password-123'}))).status,200);
+console.log('PASS: reset generic response, CSRF, throttling, password length, token replay, session revocation, emailed invitation.');
 console.log('PASS: authorization, CSRF, private cookies, role revocation, invitation recipient, concurrent single use, logout, new links and legacy links.');
