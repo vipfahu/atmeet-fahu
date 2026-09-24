@@ -8,7 +8,7 @@ export default async(request:Request)=>{
  const m=new URL(request.url).pathname.match(/^\/api\/polls(?:\/(p_[a-f0-9]{32})(\/manage)?)?$/);
  if(!m)return new Response('Not found',{status:404});
  const config=process.env.RESEND_API_KEY&&process.env.RESEND_FROM_EMAIL?{apiKey:process.env.RESEND_API_KEY,from:process.env.RESEND_FROM_EMAIL,siteUrl:process.env.URL||'https://atmeetfahu.netlify.app'}:undefined;
- const store=supabaseStore(url,key),mailer=config?managementMailer(config):undefined;
+ const store=supabaseStore(url,key,'atmeet_fahu'),mailer=config?managementMailer(config):undefined;
  if(m[2])return manage(request,store,m[1],mailer?.access,mailer?.group);
  return handle(request,store,m[1],config?resendNotifier(config):undefined,mailer?.access);
 };
