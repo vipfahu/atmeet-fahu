@@ -130,7 +130,7 @@ body {
 .heading>div:first-child{max-width:680px}
 @media(max-width:600px){.create-poll-prompt{width:100%;gap:8px}.create-poll-pointer{width:25px;height:25px}.create-poll-cta[data-slot=button]{flex:1;width:100%;padding:14px 16px}.topbar:has(.topbar-actions){height:auto;min-height:72px;gap:12px;flex-wrap:wrap;padding:14px 0}.topbar-actions{flex-wrap:wrap;margin-left:auto;gap:8px}.admin-access[data-slot=button]{padding:8px 10px}}
 
-.consultation-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:10px}
+.consultation-actions{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:10px}
 .consultation-actions .create-poll-prompt{align-items:stretch}
 .consultation-actions .create-poll-pointer{align-self:center}
 .consultation-actions .pointer-down{transform:rotate(180deg)}
@@ -149,3 +149,5 @@ body {
 /* Institutional identity: preserve the full horizontal FAHU logo. */
 .brand{min-width:0;flex-wrap:wrap;gap:12px 20px;letter-spacing:-.6px}.brand-logo{width:210px;max-width:100%;height:auto}.topbar{height:auto;min-height:104px;gap:16px;padding:16px 0}.brand{font-size:23px}.topbar-actions{flex-shrink:0}
 @media(max-width:640px){.topbar{align-items:flex-start;gap:10px}.brand{flex-direction:column;align-items:flex-start;gap:6px;font-size:19px}.brand-logo{width:165px}.topbar-actions{max-width:125px;flex-wrap:wrap;justify-content:flex-end}.admin-access{font-size:12px}}
+
+.daily-ranges{border:1px solid #dce5df;border-radius:12px;padding:16px;background:#f6faf7;min-width:0}.daily-ranges legend{font-weight:650;padding:0 6px}.daily-range{display:grid;grid-template-columns:minmax(135px,1.4fr) repeat(2,minmax(90px,1fr)) auto;gap:10px;align-items:end;margin-top:14px}.daily-range .field{margin:0;min-width:0}.daily-range input{min-width:0;padding:9px}.unavailable-slot{background:repeating-linear-gradient(135deg,#f1f2f1,#f1f2f1 5px,#e9ecea 5px,#e9ecea 6px)}.unavailable-slot:hover{box-shadow:none;background:#ecefec}@media(max-width:600px){.daily-range{grid-template-columns:1fr 1fr}.daily-range .range-date{grid-column:1/-1}.daily-range>button{grid-column:1/-1}}
