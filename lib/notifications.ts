@@ -1,3 +1,4 @@
+import {selectedMeetingLabel} from './selected-meeting';
 import type {VoteNotifier} from './api';
 import {pollPath} from './links';
 
@@ -42,10 +43,10 @@ export function managementMailer(config:{apiKey:string;from:string;siteUrl:strin
  return {
   async admin(kind:'invite'|'reset',email:string,url:string,key:string){
    const reset=kind==='reset';
-   await send('/emails',{from:config.from,to:[email],subject:reset?'at meet FAHU · Recupera tu contraseña':'at meet FAHU · Invitación de administración',text:[
-    reset?'Recibimos una solicitud para recuperar tu contraseña de at meet FAHU.':'Has recibido una invitación para administrar at meet FAHU.',
+   await send('/emails',{from:config.from,to:[email],subject:reset?'at meet FAHU · Recupera tu contraseña':'at meet FAHU · Invitación de cuenta',text:[
+    reset?'Recibimos una solicitud para recuperar tu contraseña de at meet FAHU.':'Has recibido una invitación para acceder a at meet FAHU.',
     reset?'Define una nueva contraseña mediante este enlace privado:':'Activa tu cuenta y define tu contraseña mediante este enlace privado:',url,
-    reset?'El enlace vence en 30 minutos y solo puede usarse una vez. Al cambiar la contraseña se cerrarán tus sesiones anteriores.':'El enlace vence en 7 días y solo puede usarse una vez. Usa el correo al que recibiste esta invitación. Tendrás acceso al historial de consultas y podrás invitar a otros administradores.',
+    reset?'El enlace vence en 30 minutos y solo puede usarse una vez. Al cambiar la contraseña se cerrarán tus sesiones anteriores.':'El enlace vence en 7 días y solo puede usarse una vez. Usa el correo al que recibiste esta invitación. Los permisos dependen del tipo de cuenta asignado: administración o gestión.',
     reset?'Si no solicitaste este cambio, ignora este mensaje. Tu contraseña actual seguirá funcionando.':'Si no esperabas esta invitación, puedes ignorarla.',
     'Esta cuenta es independiente del portal VIP. No compartas este enlace.'
    ].join('\n\n')},key);
@@ -56,7 +57,7 @@ export function managementMailer(config:{apiKey:string;from:string;siteUrl:strin
   },
   async group(poll:import('./domain').Poll,emails:string[],subject:string,message:string,key:string){
    for(let offset=0;offset<emails.length;offset+=100){
-    const batch=emails.slice(offset,offset+100).map(email=>({from:config.from,to:[email],subject:`at meet FAHU · ${subject}`,text:`${poll.creator?.name||'Quien organiza'} envía este mensaje sobre «${poll.title}»:\n\n${message}\n\nConsulta cerrada: ${new URL(pollPath(poll),config.siteUrl).href}\n\nRecibes este correo porque registraste tu disponibilidad en esta consulta.`}));
+    const batch=emails.slice(offset,offset+100).map(email=>({from:config.from,to:[email],subject:`at meet FAHU · ${subject}`,text:`${poll.creator?.name||'Quien organiza'} envía este mensaje sobre «${poll.title}»:\n\n${poll.selectedSlot?'Horario seleccionado: '+selectedMeetingLabel(poll)+'\n\n':''}${message}\n\nConsulta cerrada: ${new URL(pollPath(poll),config.siteUrl).href}\n\nRecibes este correo porque registraste tu disponibilidad en esta consulta.`}));
     await send('/emails/batch',batch,`meeting-message/${key}/${offset}`);
    }
   }

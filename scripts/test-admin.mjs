@@ -30,11 +30,11 @@ const fetcher=async(url,options={})=>{
    if(options.method==='POST'){invitations.set(b.token_hash,{...b,used:false});return new Response(null,{status:201});}
    const inv=invitations.get(h);return ok(inv&&!inv.used?[inv]:[]);
  }
- if(p==='/rest/v1/rpc/meeting_claim_invitation'){
-   const inv=invitations.get(b.p_hash);if(!inv||inv.used)return ok([]);inv.used=true;return ok([{email:inv.email}]);
+ if(p==='/rest/v1/rpc/meeting_claim_account_invitation'){
+   const inv=invitations.get(b.p_hash);if(!inv||inv.used)return ok([]);inv.used=true;return ok([{email:inv.email,role:inv.role}]);
  }
  if(p==='/rest/v1/rpc/meeting_delete_poll'){if(deleted.includes(b.p_id))return ok(false);deleted.push(b.p_id);return ok(true);}
- if(p==='/rest/v1/rpc/meeting_history'){historyCalls++;return ok({polls:[],total:0});}
+ if(p==='/rest/v1/rpc/meeting_account_history'){historyCalls++;return ok({polls:[],total:0});}
  throw Error('Unexpected fetch '+p);
 };
 const handle=adminHandler('https://supabase.test','server-secret',fetcher);

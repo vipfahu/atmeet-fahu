@@ -1,3 +1,4 @@
+import {extendSchedule} from './schedule-extension';
 import {passwordHash,passwordMatches} from './admin-password';
 import {z} from 'zod';
 
@@ -6,8 +7,9 @@ const inviteToken=z.string().regex(/^[a-f0-9]{64}$/);
 const secret=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
 export async function digest(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');}
 class HttpError extends Error {constructor(public status:number,message:string){super(message);}}
-type AdminUser={id:string;email:string;active:boolean;password_hash:string};
+type AdminUser={id:string;email:string;active:boolean;password_hash:string;role?:'admin'|'manager'};
 
+const accountRole=(user:AdminUser)=>user.role==='manager'?'manager':'admin';
 export type AdminMailer=(kind:'invite'|'reset',email:string,url:string,key:string)=>Promise<void>;
 export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,mailer?:AdminMailer){
   const root=url.replace(/\/$/,'');
@@ -48,7 +50,7 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,ma
       }
       let body:unknown={};
       if(request.method==='POST'){
-        const raw=await request.text();if(raw.length>12000)throw new HttpError(413,'Solicitud demasiado grande.');
+        const raw=await request.text();if(raw.length>40000)throw new HttpError(413,'Solicitud demasiado grande.');
         try{body=JSON.parse(raw);}catch{throw new HttpError(400,'Formato no permitido.');}
       }
       if(path==='forgot-password'&&request.method==='POST'){
@@ -77,7 +79,7 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,ma
         // Derive a hash even for unknown accounts, so failure timing is comparable.
         const valid=user?await passwordMatches(input.password,user.password_hash):(await passwordHash(input.password),false);
         if(!valid)throw new HttpError(401,'Correo o contraseña incorrectos.');
-        await session(user);return reply({email:user.email});
+        await session(user);return reply({id:user.id,email:user.email,role:accountRole(user)});
       }
       if(path==='accept'&&request.method==='POST'){
         const input=credentials.extend({token:inviteToken,password:z.string().min(12).max(128)}).parse(body);
@@ -85,7 +87,7 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,ma
         const accounts=await rest('rpc/admin_accept_invitation','POST',{p_hash:hash,p_email:input.email,p_password_hash:await passwordHash(input.password)});
         const user:AdminUser=accounts?.[0];
         if(!user)throw new HttpError(400,'La invitación no es válida, ha vencido, fue utilizada o el correo ya tiene una cuenta.');
-        await session(user);return reply({email:user.email},201);
+        await session(user);return reply({id:user.id,email:user.email,role:accountRole(user)},201);
       }
       if(path==='logout'&&request.method==='POST'){
         const raw=request.headers.get('cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName+'='))?.slice(cookieName.length+1);
@@ -93,13 +95,25 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,ma
         cookie('',0);return reply({ok:true});
       }
       const {user}=await signedIn();
-      if(path==='me'&&request.method==='GET')return reply({email:user.email});
+      if(path==='me'&&request.method==='GET')return reply({id:user.id,email:user.email,role:accountRole(user)});
       if(path==='history'&&request.method==='GET'){
         const offset=z.coerce.number().int().min(0).max(1000000).parse(current.searchParams.get('offset')||0);
         const search=z.string().max(120).parse(current.searchParams.get('search')||'');
-        return reply(await rest('rpc/meeting_history','POST',{p_offset:offset,p_search:search}));
+        return reply(await rest('rpc/meeting_account_history','POST',{p_user:user.id,p_offset:offset,p_search:search}));
+      }
+      if(path==='extend-poll'&&request.method==='POST'){
+        const input=z.object({id:z.string().regex(/^p_[a-f0-9]{32}$/),revision:z.number().int().min(0),ranges:z.array(z.object({date:z.string(),from:z.number(),to:z.number()})).max(256).optional(),from:z.number().optional(),to:z.number().optional()}).parse(body);
+        const rows=await rest(`polls?id=eq.${input.id}&select=data`);
+        const poll=rows?.[0]?JSON.parse(rows[0].data):null;
+        if(!poll||(accountRole(user)!=='admin'&&poll.ownerId!==user.id))throw new HttpError(404,'Consulta no disponible para esta cuenta.');
+        if((poll.scheduleRevision||0)!==input.revision)throw new HttpError(409,'La consulta cambió. Actualiza el historial antes de editar.');
+        let patch;try{patch=extendSchedule(poll,input);}catch(e){throw new HttpError(400,(e as Error).message);}
+        const updated=await rest('rpc/meeting_extend_poll','POST',{p_user:user.id,p_id:input.id,p_revision:input.revision,p_patch:patch});
+        if(!updated)throw new HttpError(404,'Consulta no disponible para esta cuenta.');
+        return reply({poll:updated});
       }
       if(path==='delete-poll'&&request.method==='POST'){
+        if(accountRole(user)!=='admin')throw new HttpError(403,'Solo administración puede eliminar consultas.');
         const parsed=z.object({id:z.string().regex(/^p_[a-f0-9]{32}$/)}).safeParse(body);
         if(!parsed.success)throw new HttpError(400,'El identificador de la consulta no es válido.');
         const deleted=await rest('rpc/meeting_delete_poll','POST',{p_id:parsed.data.id});
@@ -107,8 +121,10 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,ma
         return reply({ok:true});
       }
       if(path==='invitations'&&request.method==='POST'){
+        if(accountRole(user)!=='admin')throw new HttpError(403,'Solo administración puede crear cuentas.');
+        const role=z.object({role:z.enum(['admin','manager']).default('manager')}).parse(body).role;
         const {email}=credentials.pick({email:true}).parse(body),token=secret();
-        await rest('meeting_admin_invitations','POST',{token_hash:await digest(token),email,created_by:user.id});
+        await rest('meeting_admin_invitations','POST',{token_hash:await digest(token),email,role,created_by:user.id});
         const invitationUrl=current.origin+'/admin#invite='+token;
         let emailSent=false;
         if(mailer){try{await mailer('invite',email,invitationUrl,'admin-invite/'+await digest(token));emailSent=true;}catch{console.error('Admin invitation email delivery failed');}}
