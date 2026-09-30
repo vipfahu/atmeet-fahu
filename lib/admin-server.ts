@@ -1,6 +1,8 @@
+import {notifyScheduleChanges,type ScheduleMailer} from './schedule-notifications';
+import {validKeys} from './domain';
 import {notifyAccountRequests,type RequestMailer} from './request-notifications';
 import {submitAccountRequest,reviewAccountRequests} from './account-requests';
-import {extendSchedule} from './schedule-extension';
+import {extendSchedule,replaceSchedule} from './schedule-extension';
 import {passwordHash,passwordMatches} from './admin-password';
 import {z} from 'zod';
 
@@ -13,7 +15,7 @@ type AdminUser={id:string;email:string;active:boolean;password_hash:string;role?
 
 const accountRole=(user:AdminUser)=>user.role==='manager'?'manager':'admin';
 export type AdminMailer=(kind:'invite'|'reset',email:string,url:string,key:string)=>Promise<void>;
-export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,mailer?:AdminMailer,requestMailer?:RequestMailer){
+export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,mailer?:AdminMailer,requestMailer?:RequestMailer,scheduleMailer?:ScheduleMailer){
   const root=url.replace(/\/$/,'');
   async function call(path:string,method='GET',body?:unknown,bearer=key){
     const r=await fetcher(root+path,{method,headers:{'Accept-Profile':'atmeet_fahu','Content-Profile':'atmeet_fahu',apikey:key,Authorization:`Bearer ${bearer}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
@@ -48,7 +50,7 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,ma
       return {user,hash};
     }
     try{
-      if(request.headers.get('X-Atmeet-Notice-Worker')===key){await notifyRequests();return reply({processed:true});}
+      if(request.headers.get('X-Atmeet-Notice-Worker')===key){try{await notifyRequests();}catch{console.error('Request notice retry pending');}await notifyScheduleChanges(rest,scheduleMailer);return reply({processed:true});}
       const path=current.pathname.replace(/^\/api\/admin\/?/,'');
       if(request.method!=='GET'){
         if(request.headers.get('origin')!==current.origin)throw new HttpError(403,'Origen no permitido.');
@@ -108,6 +110,21 @@ export function adminHandler(url:string,key:string,fetcher:typeof fetch=fetch,ma
         const offset=z.coerce.number().int().min(0).max(1000000).parse(current.searchParams.get('offset')||0);
         const search=z.string().max(120).parse(current.searchParams.get('search')||'');
         return reply(await rest('rpc/meeting_account_history','POST',{p_user:user.id,p_offset:offset,p_search:search}));
+      }
+      if(path==='edit-poll'&&request.method==='POST'){
+        const input=z.object({id:z.string().regex(/^p_[a-f0-9]{32}$/),revision:z.number().int().min(0),ranges:z.array(z.object({date:z.string(),from:z.number(),to:z.number()})).max(256).optional(),from:z.number().optional(),to:z.number().optional(),notifyParticipants:z.boolean().default(true),reopen:z.boolean().default(false)}).parse(body);
+        const rows=await rest(`polls?id=eq.${input.id}&select=data`),poll=rows?.[0]?JSON.parse(rows[0].data):null;
+        if(!poll||(accountRole(user)!=='admin'&&poll.ownerId!==user.id))throw new HttpError(404,'Consulta no disponible para esta cuenta.');
+        if((poll.scheduleRevision||0)!==input.revision)throw new HttpError(409,'La consulta cambió. Actualiza el historial antes de editar.');
+        if(poll.closed&&!input.reopen)throw new HttpError(400,'Confirma la reapertura de registros para cambiar las propuestas.');
+        let patch;try{patch=replaceSchedule(poll,input);}catch(e){throw new HttpError(400,(e as Error).message);}
+        const before=validKeys(poll),after=validKeys({...poll,...patch});
+        if(before.size===after.size&&[...before].every(k=>after.has(k)))throw new HttpError(400,'No hay cambios en los bloques propuestos.');
+        const updated=await rest('rpc/meeting_edit_schedule','POST',{p_user:user.id,p_id:input.id,p_revision:input.revision,p_patch:patch,p_keys:[...after],p_notify:input.notifyParticipants,p_reopen:input.reopen});
+        if(!updated)throw new HttpError(409,'La consulta cambió o ya no está disponible. Actualiza el historial.');
+        let notificationWarning;
+        if(input.notifyParticipants){try{if(!scheduleMailer)throw Error('Mailer not configured');await notifyScheduleChanges(rest,scheduleMailer,input.id);}catch{notificationWarning='Propuestas guardadas. El aviso quedó pendiente y se reintentará automáticamente.';}}
+        return reply({poll:updated,notificationWarning});
       }
       if(path==='extend-poll'&&request.method==='POST'){
         const input=z.object({id:z.string().regex(/^p_[a-f0-9]{32}$/),revision:z.number().int().min(0),ranges:z.array(z.object({date:z.string(),from:z.number(),to:z.number()})).max(256).optional(),from:z.number().optional(),to:z.number().optional()}).parse(body);
