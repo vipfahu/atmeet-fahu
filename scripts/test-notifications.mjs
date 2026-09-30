@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {handle} from '../lib/api.ts';
-import {resendNotifier} from '../lib/notifications.ts';
+import {resendNotifier,managementMailer} from '../lib/notifications.ts';
 const poll={id:'p_'+'a'.repeat(32),title:'Prueba',creator:{name:'Creador',email:'creator@example.com'},mode:'week',start:'2026-09-23',end:'2026-09-30',from:540,to:720,step:60,timezone:'America/Santiago',created:new Date().toISOString()};
 const saved=new Map();let failStorage=false,notifications=[];
 const store={getPoll:async()=>poll,getVotes:async()=>[],getVote:async id=>saved.get(id),saveVote:async v=>{if(failStorage)throw Error('Test storage failure');saved.set(v.id,v)}};
@@ -17,3 +17,14 @@ const sender=resendNotifier({apiKey:'secret',from:'at meet <test@example.com>',s
 await sender(...notifications[0]);assert.equal(calls.length,2);assert.equal(calls[0].headers['Idempotency-Key'],calls[1].headers['Idempotency-Key']);assert.equal(calls[0].body,calls[1].body);const payload=JSON.parse(calls[0].body);assert.deepEqual(payload.to,['creator@example.com']);assert.match(payload.text,/Ana registró/);assert.match(payload.text,/https:\/\/atmeet.netlify.app\/r\//);assert(!payload.text.includes(vote.token));
 const noCreator={...poll,creator:undefined};calls=[];await sender(noCreator,notifications[0][1],undefined,'key');assert.equal(calls.length,0);
 console.log('PASS: notification after valid save, changes only, failed delivery preserves vote, transient retries use same key, legacy skip');
+
+const deliveryCalls=[];
+const confirmationMailer=managementMailer({apiKey:'secret',from:'test@example.com',siteUrl:'https://meeting.test'},async(url,options)=>{deliveryCalls.push(JSON.parse(options.body));return Response.json({id:'mock'});});
+const selected={...poll,closed:true,selectedSlot:'w2@540',selectedDate:'2026-09-30',duration:60};
+await confirmationMailer.group(selected,['one@example.com','two@example.com'],'Confirmación','Enlace <seguro> & detalle','confirmed-test');
+const messages=deliveryCalls[0];assert.equal(messages.length,2);assert.deepEqual(messages[0].to,['one@example.com']);
+assert.match(messages[0].html,/Añadir a Google Calendar/);assert.match(messages[0].html,/Calendario de macOS/);assert.match(messages[0].html,/&lt;seguro&gt; &amp; detalle/);
+assert.match(messages[0].text,/calendar.google.com/);assert.match(messages[0].text,/slot=w2%40540/);assert(!messages[0].text.includes('two@example.com'));
+await confirmationMailer.requestAccount('admin@example.com',{id:'request-id',name:'Solicitante',email:'applicant@example.com',message:'Necesito acceso'},'request-test');
+assert.deepEqual(deliveryCalls[1].to,['admin@example.com']);assert.match(deliveryCalls[1].text,/applicant@example.com/);assert.match(deliveryCalls[1].text,/no concede acceso/);
+console.log('PASS: calendar confirmation buttons, escaped HTML, individual recipients and admin request notice');
