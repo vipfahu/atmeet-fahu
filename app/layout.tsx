@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "at meet FAHU · Horarios en común",
+  title: "AtMeet FAHU · Horarios en común",
   description: "Encuentra horarios comunes con preferencias visuales y comentarios.",
   other: {
     "codex-preview": "development",
