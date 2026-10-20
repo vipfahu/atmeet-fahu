@@ -1,4 +1,5 @@
 "use client";
+import {InstitutionalBrand,InstitutionalFooter} from '@/components/institutional-brand';
 import {AccountRequestForm,AccountRequestsPanel} from '@/components/accounts/account-requests';
 import {useCallback,useEffect,useState} from 'react';
 import {Button} from '@/components/ui/button';
@@ -59,7 +60,7 @@ export default function Admin(){
   }
   async function changePassword(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');setNotice('');try{await adminApi('password',{currentPassword,password:newPassword});setCurrentPassword('');setNewPassword('');setNotice('Contraseña actualizada. Las demás sesiones se cerraron.');}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   return <main className="shell admin-shell">
-    <header className="topbar"><a className="brand" href="/" style={{color:'inherit',textDecoration:'none'}}><img className="brand-logo" src="/fahu-logo.png" alt=""/>AtMeet FAHU</a><div className="row"><a href="/">Volver al calendario</a>{account&&<Button variant="outline" disabled={busy} onClick={logout}>Cerrar sesión</Button>}</div></header>
+    <header className="topbar"><InstitutionalBrand/><div className="row"><a href="/">Volver al calendario</a>{account&&<Button variant="outline" disabled={busy} onClick={logout}>Cerrar sesión</Button>}</div></header>
     <div className="heading"><p className="eyebrow">ADMINISTRACIÓN</p><h1>{account?'Historial de consultas':reset?'Define tu nueva contraseña':forgot?'Recupera tu contraseña':invite?'Activa tu cuenta':'Accede a tu historial'}</h1><p className="muted">{account?`Sesión de ${account}. ${role==='admin'?'Administración: acceso a todas las consultas.':'Gestión: acceso solo a las consultas creadas con esta cuenta.'}`:reset?'El enlace de recuperación es privado y de un solo uso.':forgot?'Indica el correo de tu cuenta.':invite?'Elige tu contraseña para administrar las consultas.':'Ingresa con tu cuenta de AtMeet FAHU, independiente del portal VIP. Los participantes pueden seguir respondiendo sin cuenta.'}</p></div>
     <p className="small muted">Los correos de invitación y recuperación llegan desde <strong>atmeetfahu@contact.agencements.net</strong>. Añade esta dirección a tus contactos o remitentes confiables.</p>
     {error&&<p className="notice error" role="alert">{error}</p>}{notice&&<p className="notice" role="status">{notice}</p>}
@@ -82,5 +83,5 @@ export default function Admin(){
       <section className="panel"><h2>Cambiar contraseña</h2><form className="dialogform" onSubmit={changePassword}><label className="field">Contraseña actual<input type="password" autoComplete="current-password" required maxLength={128} value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)}/></label><label className="field">Nueva contraseña<input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={newPassword} onChange={e=>setNewPassword(e.target.value)}/></label><p className="small muted">Al menos 12 caracteres.</p><Button type="submit" disabled={busy}>Guardar contraseña</Button></form></section></div>
     </>}
   <ScheduleExtensionDialog poll={editingPoll} onClose={()=>setEditingPoll(null)} onSave={async(body)=>{const result=await adminApi('edit-poll',body);setEditingPoll(null);setNotice(result.notificationWarning||'Propuestas actualizadas. Se conservaron las preferencias de los bloques vigentes y los avisos solicitados quedaron registrados.');await loadHistory();}}/>
-  </main>;
+  <InstitutionalFooter/></main>;
 }

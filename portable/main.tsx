@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "../app/globals.css";
+import "../app/institutional.css";
 import Home from "../app/page";
 const Manage = lazy(() => import("../app/manage/page"));
 const Admin = lazy(() => import("../app/admin/page"));
